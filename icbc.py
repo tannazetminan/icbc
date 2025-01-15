@@ -56,6 +56,17 @@ def after_request(response):
 # Global variables
 search_running = False
 search_thread = None
+BRANCH_NAMES = {
+    "274": "Burnaby claim centre (Wayburne Drive)",
+    "271": "Newton claim centre (68 Avenue)",
+    "8": "North Vancouver driver licensing",
+    "93": "Richmond (Lansdowne Centre)",
+    "273": "Richmond claim centre (Elmbridge Way)",
+    "275": "Vancouver claim centre (Kingsway)",
+    "9": "Vancouver (Point Grey)",
+    "11": "Surrey driver licensing",
+    "269": "Surrey claim centre (152A St.)"
+}
 user_config = {
     'icbc': {
         'branchId': None 
@@ -172,6 +183,10 @@ def appointmentMatchRequirement(appointment):
         print(f"Error checking appointment: {str(e)}")
         return False
 
+def get_branch_name(branch_id):
+    """Get branch name from branch ID"""
+    return BRANCH_NAMES.get(str(branch_id), f"Unknown Branch ({branch_id})")
+
 def check_appointments():
     """Check for available appointments"""
     token = getToken()
@@ -181,12 +196,15 @@ def check_appointments():
     appointments = getAppointments(token)
     matching_appointments = []
     
+    branch_id = str(user_config['icbc']['branchId'])
+    branch_name = get_branch_name(branch_id)
+    
     for appointment in appointments:
         if appointmentMatchRequirement(appointment):
             matching_appointments.append({
                 'date': appointment["appointmentDt"]["date"],
                 'time': appointment["startTm"],
-                'branch': appointment.get("posNm", user_config['icbc']['branchId'])  
+                'branch': branch_name  # Use the mapped branch name
             })
 
     if matching_appointments:
@@ -196,7 +214,6 @@ def check_appointments():
         mail_header = "Good news! We found available appointments that match your criteria:\n"
         mail_content = ""
         prevDate = ""
-        branch_name = matching_appointments[0]['branch']  # Use the first appointment's branch name
         
         for apt in matching_appointments:
             if prevDate != apt['date']:
