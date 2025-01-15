@@ -265,6 +265,26 @@ def search_status():
     })
 
 
+@app.route('/get-appointments', methods=['GET'])
+def get_appointments():
+    """Retrieve the last matching appointments"""
+    token = getToken()
+    if not token:
+        return jsonify([])
+
+    appointments = getAppointments(token)
+    matching_appointments = []
+
+    for appointment in appointments:
+        if appointmentMatchRequirement(appointment):
+            matching_appointments.append({
+                'date': appointment["appointmentDt"]["date"],
+                'time': appointment["startTm"]
+            })
+
+    return jsonify(matching_appointments)
+
+
 @app.route('/stop-search', methods=['POST'])
 def stop_search():
     """Stop the appointment search"""
