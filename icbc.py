@@ -186,7 +186,7 @@ def check_appointments():
             matching_appointments.append({
                 'date': appointment["appointmentDt"]["date"],
                 'time': appointment["startTm"],
-                'branch': appointment.get("posNm", "Point Grey")  # Get branch name, default to Point Grey
+                'branch': appointment.get("posNm", user_config['icbc']['branchId'])  
             })
 
     if matching_appointments:
