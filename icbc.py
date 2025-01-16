@@ -535,6 +535,55 @@ def stop_search():
         })
     return jsonify({"status": "error", "message": "No search running"})
 
+
+
+@app.route('/check-sms-config', methods=['GET'])
+def check_sms_config():
+    """Check SMS configuration and Twilio credentials"""
+    try:
+        # Check if Twilio credentials are set
+        if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER]):
+            return jsonify({
+                "status": "error",
+                "message": "Twilio credentials are not properly configured",
+                "details": {
+                    "account_sid_set": bool(TWILIO_ACCOUNT_SID),
+                    "auth_token_set": bool(TWILIO_AUTH_TOKEN),
+                    "phone_number_set": bool(TWILIO_PHONE_NUMBER)
+                }
+            }), 400
+
+        # Try to initialize Twilio client
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        
+        # Test if we can access the account info
+        account = client.api.accounts(TWILIO_ACCOUNT_SID).fetch()
+        
+        # Check if there's a phone number configured in the current user session
+        phone_configured = bool(user_config.get('phone'))
+        
+        return jsonify({
+            "status": "success",
+            "message": "Twilio configuration is valid",
+            "details": {
+                "account_status": account.status,
+                "phone_number": TWILIO_PHONE_NUMBER,
+                "user_phone_configured": phone_configured,
+                "current_user_phone": user_config.get('phone') if phone_configured else None
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Error checking Twilio configuration: {str(e)}",
+            "details": {
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+        }), 500
+
+
 if __name__ == '__main__':
     print("Starting Flask server on port 8888...")
     app.run(host='0.0.0.0', port=8888)
