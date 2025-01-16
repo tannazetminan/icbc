@@ -1,5 +1,5 @@
 # # Install required packages
-# pip install flask flask-cors requests PyYAML
+# pip install flask flask-cors requests PyYAML twilio
 # # Run the Flask app
 # python icbc-flask-app.py
 
@@ -40,6 +40,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import time
 import threading
+from twilio.rest import Client
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import html
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -71,24 +75,84 @@ user_config = {
     'icbc': {
         'branchId': None 
     },
-    'gmail': {}
+    'gmail': {},
+    'phone': None
 }
 search_history = {
     'start_time': None,
     'found_appointments': []
 }
 
+
+TWILIO_ACCOUNT_SID = ''
+TWILIO_AUTH_TOKEN = ''
+TWILIO_PHONE_NUMBER = ''
+
+
+# def sendEmail(mail_content, branch_name):
+#     """Send email using Gmail"""
+#     if not all(key in user_config['gmail'] for key in ['sender_address', 'sender_pass', 'receiver_address']):
+#         print("Email configuration missing")
+#         return False
+        
+#     message = MIMEMultipart()
+#     message['From'] = user_config['gmail']['sender_address']
+#     message['To'] = user_config['gmail']['receiver_address']
+#     message['Subject'] = f'ICBC Bot Notification - Appointment Found at {branch_name}!'
+#     message.attach(MIMEText(mail_content, 'plain'))
+    
+#     try:
+#         session = smtplib.SMTP('smtp.gmail.com', 587)
+#         session.starttls()
+#         session.login(user_config['gmail']['sender_address'], user_config['gmail']['sender_pass'])
+#         text = message.as_string()
+#         session.sendmail(user_config['gmail']['sender_address'], user_config['gmail']['receiver_address'], text)
+#         session.quit()
+#         print('Mail Sent\n' + mail_content)
+#         return True
+#     except Exception as e:
+#         print(f"Error sending email: {str(e)}")
+#         return False
+
 def sendEmail(mail_content, branch_name):
-    """Send email using Gmail"""
+    """Send HTML email using Gmail"""
     if not all(key in user_config['gmail'] for key in ['sender_address', 'sender_pass', 'receiver_address']):
         print("Email configuration missing")
         return False
         
-    message = MIMEMultipart()
+    message = MIMEMultipart('alternative')
     message['From'] = user_config['gmail']['sender_address']
     message['To'] = user_config['gmail']['receiver_address']
     message['Subject'] = f'ICBC Bot Notification - Appointment Found at {branch_name}!'
-    message.attach(MIMEText(mail_content, 'plain'))
+    
+    # Create plain text version
+    text_content = mail_content + "\n\nBook your appointment here: https://onlinebusiness.icbc.com/webdeas-ui/login"
+    
+    # Create HTML version
+    html_content = f"""
+    <html>
+        <head></head>
+        <body>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #004085;">ICBC Appointment Notification</h2>
+                <div style="white-space: pre-line;">
+                    {html.escape(mail_content)}
+                </div>
+                <div style="margin-top: 30px; text-align: center;">
+                    <a href="https://onlinebusiness.icbc.com/webdeas-ui/login" 
+                       style="background-color: #007bff; color: white; padding: 12px 24px; 
+                              text-decoration: none; border-radius: 4px; display: inline-block;">
+                        Book Your Appointment Now
+                    </a>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+    
+    # Attach both versions
+    message.attach(MIMEText(text_content, 'plain'))
+    message.attach(MIMEText(html_content, 'html'))
     
     try:
         session = smtplib.SMTP('smtp.gmail.com', 587)
@@ -102,6 +166,32 @@ def sendEmail(mail_content, branch_name):
     except Exception as e:
         print(f"Error sending email: {str(e)}")
         return False
+
+def sendSMS(content, branch_name):
+    """Send SMS using Twilio"""
+    if not user_config.get('phone'):
+        print("Phone number not configured")
+        return False
+        
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        
+        # Create a shorter message for SMS
+        sms_content = f"ICBC Appointment Found at {branch_name}!\n\n"
+        sms_content += "Available slots found. Check your email for details.\n"
+        sms_content += "Book here: https://onlinebusiness.icbc.com/webdeas-ui/login"
+        
+        message = client.messages.create(
+            body=sms_content,
+            from_=TWILIO_PHONE_NUMBER,
+            to=user_config['phone']
+        )
+        print(f'SMS sent: {message.sid}')
+        return True
+    except Exception as e:
+        print(f"Error sending SMS: {str(e)}")
+        return False
+
 
 def getToken():
     """Get authorization token from ICBC"""
@@ -187,6 +277,46 @@ def get_branch_name(branch_id):
     """Get branch name from branch ID"""
     return BRANCH_NAMES.get(str(branch_id), f"Unknown Branch ({branch_id})")
 
+# def check_appointments():
+#     """Check for available appointments"""
+#     token = getToken()
+#     if not token:
+#         return False
+    
+#     appointments = getAppointments(token)
+#     matching_appointments = []
+    
+#     branch_id = str(user_config['icbc']['branchId'])
+#     branch_name = get_branch_name(branch_id)
+    
+#     for appointment in appointments:
+#         if appointmentMatchRequirement(appointment):
+#             matching_appointments.append({
+#                 'date': appointment["appointmentDt"]["date"],
+#                 'time': appointment["startTm"],
+#                 'branch': branch_name  # Use the mapped branch name
+#             })
+
+#     if matching_appointments:
+#         # Store found appointments in search history
+#         search_history['found_appointments'].extend(matching_appointments)
+        
+#         mail_header = "Good news! We found available appointments that match your criteria:\n"
+#         mail_content = ""
+#         prevDate = ""
+        
+#         for apt in matching_appointments:
+#             if prevDate != apt['date']:
+#                 mail_content += '\n\n' + apt['date'] + ':'
+#                 prevDate = apt['date']
+#             mail_content += f'\n\t{apt["time"]} at {apt["branch"]}'
+            
+#         mail_content += "\n\nPlease visit ICBC's website to book your preferred slot."
+        
+#         sendEmail(mail_header + mail_content, branch_name)
+#         return True
+#     return False
+
 def check_appointments():
     """Check for available appointments"""
     token = getToken()
@@ -204,11 +334,10 @@ def check_appointments():
             matching_appointments.append({
                 'date': appointment["appointmentDt"]["date"],
                 'time': appointment["startTm"],
-                'branch': branch_name  # Use the mapped branch name
+                'branch': branch_name
             })
 
     if matching_appointments:
-        # Store found appointments in search history
         search_history['found_appointments'].extend(matching_appointments)
         
         mail_header = "Good news! We found available appointments that match your criteria:\n"
@@ -220,13 +349,14 @@ def check_appointments():
                 mail_content += '\n\n' + apt['date'] + ':'
                 prevDate = apt['date']
             mail_content += f'\n\t{apt["time"]} at {apt["branch"]}'
-            
-        mail_content += "\n\nPlease visit ICBC's website to book your preferred slot."
         
-        sendEmail(mail_header + mail_content, branch_name)
-        return True
+        # Send both email and SMS
+        email_sent = sendEmail(mail_header + mail_content, branch_name)
+        sms_sent = sendSMS(mail_header + mail_content, branch_name)
+        
+        return email_sent or sms_sent
     return False
-
+    
 def background_search():
     """Background thread for continuous searching"""
     global search_running
@@ -273,6 +403,55 @@ def test():
     })
 
 
+# @app.route('/config', methods=['POST'])
+# def set_config():
+#     """Set user configuration and automatically start search"""
+#     try:
+#         config = request.json
+#         if not isinstance(config, dict):
+#             return jsonify({"status": "error", "message": "Invalid configuration format"}), 400
+            
+#         # Validate ICBC config
+#         icbc_config = config.get('icbc', {})
+#         required_icbc_fields = [
+#             'drvrLastName', 'licenceNumber', 'keyword', 'examClass',
+#             'expactAfterDate', 'expactBeforeDate', 'expactAfterTime', 'expactBeforeTime',
+#             'branchId'  # Add branchId to required fields
+#         ]
+        
+#         if not all(field in icbc_config for field in required_icbc_fields):
+#             return jsonify({
+#                 "status": "error", 
+#                 "message": f"Missing required ICBC fields. Required: {', '.join(required_icbc_fields)}"
+#             }), 400
+            
+#         # Validate Gmail config
+#         gmail_config = config.get('gmail', {})
+#         required_gmail_fields = ['sender_address', 'sender_pass', 'receiver_address']
+        
+#         if not all(field in gmail_config for field in required_gmail_fields):
+#             return jsonify({
+#                 "status": "error", 
+#                 "message": f"Missing required Gmail fields. Required: {', '.join(required_gmail_fields)}"
+#             }), 400
+            
+#         # Update configuration
+#         user_config['icbc'] = icbc_config
+#         user_config['gmail'] = gmail_config
+        
+#         # Automatically start the search
+#         start_search_thread()
+        
+#         return jsonify({
+#             "status": "success",
+#             "message": "Configuration updated and search started automatically - you will receive an email when an appointment is found"
+#         })
+#     except Exception as e:
+#         return jsonify({
+#             "status": "error",
+#             "message": f"Error updating configuration: {str(e)}"
+#         }), 400
+
 @app.route('/config', methods=['POST'])
 def set_config():
     """Set user configuration and automatically start search"""
@@ -286,7 +465,7 @@ def set_config():
         required_icbc_fields = [
             'drvrLastName', 'licenceNumber', 'keyword', 'examClass',
             'expactAfterDate', 'expactBeforeDate', 'expactAfterTime', 'expactBeforeTime',
-            'branchId'  # Add branchId to required fields
+            'branchId'
         ]
         
         if not all(field in icbc_config for field in required_icbc_fields):
@@ -308,20 +487,20 @@ def set_config():
         # Update configuration
         user_config['icbc'] = icbc_config
         user_config['gmail'] = gmail_config
+        user_config['phone'] = config.get('phone')  # Add phone number
         
         # Automatically start the search
         start_search_thread()
         
         return jsonify({
             "status": "success",
-            "message": "Configuration updated and search started automatically - you will receive an email when an appointment is found"
+            "message": "Configuration updated and search started automatically - you will receive email and SMS notifications when an appointment is found"
         })
     except Exception as e:
         return jsonify({
             "status": "error",
             "message": f"Error updating configuration: {str(e)}"
         }), 400
-
 
 
 @app.route('/get-config', methods=['GET'])
