@@ -487,7 +487,15 @@ def set_config():
         # Update configuration
         user_config['icbc'] = icbc_config
         user_config['gmail'] = gmail_config
-        user_config['phone'] = config.get('phone')  # Add phone number
+        user_config['phone'] = config.get('phone')  # Phone number only required if not using default Twilio
+        
+        # Update Twilio credentials if provided (otherwise use defaults)
+        global TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+        twilio_config = config.get('twilio', {})
+        if twilio_config:
+            TWILIO_ACCOUNT_SID = twilio_config.get('account_sid', TWILIO_ACCOUNT_SID)
+            TWILIO_AUTH_TOKEN = twilio_config.get('auth_token', TWILIO_AUTH_TOKEN)
+            TWILIO_PHONE_NUMBER = twilio_config.get('phone_number', TWILIO_PHONE_NUMBER)
         
         # Automatically start the search
         start_search_thread()
@@ -501,7 +509,6 @@ def set_config():
             "status": "error",
             "message": f"Error updating configuration: {str(e)}"
         }), 400
-
 
 @app.route('/get-config', methods=['GET'])
 def get_config():
